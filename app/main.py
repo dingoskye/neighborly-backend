@@ -149,7 +149,7 @@ def like_post(post_id: str, userId: str = None, session: Session = Depends(get_s
     post_read.isLiked = is_liked
     return post_read
 
-@app.post("/events", response_model=Event)
+@app.post("/events", response_model=EventRead)
 def create_event(event: EventCreate, session: Session = Depends(get_session)):
     organizer = session.get(User, event.organizerId)
     if not organizer:
@@ -170,8 +170,8 @@ def create_event(event: EventCreate, session: Session = Depends(get_session)):
         organizerName=organizer.name,
         organizerAvatar=organizer.avatar,
         category=event.category,
-        attendeeCount=0,
-        isJoined=False,
+        attendeeCount=1,
+        isJoined=True,
         isPast=False
     )
     session.add(new_event)
