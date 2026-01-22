@@ -10,6 +10,12 @@ class User(SQLModel, table=True):
     bio: str
     joinedDate: str
 
+class UserPostLike(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    userId: str
+    postId: str
+
+
 class Comment(SQLModel, table=True):
     id: str = Field(primary_key=True)
     userId: str
@@ -62,6 +68,7 @@ class Event(SQLModel, table=True):
 
     ageGroups: List[AttendeeAgeGroup] = Relationship(back_populates="event")
 
+
 # Pydantic Schemas for Creation and Updates
 
 class PostCreate(SQLModel):
@@ -93,3 +100,39 @@ class UserUpdate(SQLModel):
     avatar: Optional[str] = None
     neighborhood: Optional[str] = None
     bio: Optional[str] = None
+
+# Read Models with Relationships
+class PostRead(SQLModel):
+    id: str
+    title: str
+    subtitle: str
+    content: str
+    image: str
+    authorId: str
+    authorName: str
+    authorAvatar: str
+    createdAt: datetime
+    likes: int
+    isLiked: bool = False
+    comments: List[Comment] = []
+
+
+class EventRead(SQLModel):
+    id: str
+    title: str
+    description: str
+    image: str
+    date: str
+    time: str
+    locationName: str
+    locationAddress: str
+    lat: float
+    lng: float
+    organizerId: str
+    organizerName: str
+    organizerAvatar: str
+    category: str
+    attendeeCount: int
+    isJoined: bool
+    isPast: bool
+    ageGroups: List[AttendeeAgeGroup] = []

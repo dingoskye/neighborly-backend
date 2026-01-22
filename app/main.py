@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlmodel import Session, select
 from typing import List
 from .database import engine, create_db_and_tables, get_session
-from .models import Post, Event, User, Comment, PostCreate, EventCreate, UserUpdate, CommentCreate
+from .models import Post, Event, User, Comment, PostCreate, EventCreate, UserUpdate, CommentCreate, PostRead, EventRead, UserPostLike
 import uuid
 from sqlalchemy.orm import selectinload
 
@@ -21,12 +21,25 @@ app.add_middleware(
 def on_startup():
     create_db_and_tables()
 
-@app.get("/posts", response_model=List[Post])
-def read_posts(session: Session = Depends(get_session)):
+@app.get("/posts", response_model=List[PostRead])
+def read_posts(userId: str = None, session: Session = Depends(get_session)):
     posts = session.exec(select(Post).options(selectinload(Post.comments))).all()
-    return posts
+    
+    post_reads = []
+    for post in posts:
+        is_liked = False
+        if userId:
+            like = session.exec(select(UserPostLike).where(UserPostLike.userId == userId, UserPostLike.postId == post.id)).first()
+            if like:
+                is_liked = True
+        
+        post_read = PostRead.from_orm(post)
+        post_read.isLiked = is_liked
+        post_reads.append(post_read)
+        
+    return post_reads
 
-@app.get("/events", response_model=List[Event])
+@app.get("/events", response_model=List[EventRead])
 def read_events(session: Session = Depends(get_session)):
     events = session.exec(select(Event).options(selectinload(Event.ageGroups))).all()
     return events
@@ -65,12 +78,21 @@ def create_post(post: PostCreate, session: Session = Depends(get_session)):
     session.refresh(new_post)
     return new_post
 
-@app.get("/posts/{post_id}", response_model=Post)
-def read_post(post_id: str, session: Session = Depends(get_session)):
+@app.get("/posts/{post_id}", response_model=PostRead)
+def read_post(post_id: str, userId: str = None, session: Session = Depends(get_session)):
     post = session.exec(select(Post).where(Post.id == post_id).options(selectinload(Post.comments))).first()
     if not post:
         raise HTTPException(status_code=404, detail="Post not found")
-    return post
+        
+    is_liked = False
+    if userId:
+        like = session.exec(select(UserPostLike).where(UserPostLike.userId == userId, UserPostLike.postId == post_id)).first()
+        if like:
+            is_liked = True
+            
+    post_read = PostRead.from_orm(post)
+    post_read.isLiked = is_liked
+    return post_read
 
 @app.post("/posts/{post_id}/comments", response_model=Comment)
 def create_comment(post_id: str, comment: CommentCreate, session: Session = Depends(get_session)):
@@ -95,16 +117,37 @@ def create_comment(post_id: str, comment: CommentCreate, session: Session = Depe
     session.refresh(new_comment)
     return new_comment
 
-@app.post("/posts/{post_id}/like", response_model=Post)
-def like_post(post_id: str, session: Session = Depends(get_session)):
+@app.post("/posts/{post_id}/like", response_model=PostRead)
+def like_post(post_id: str, userId: str = None, session: Session = Depends(get_session)):
+    if not userId:
+        raise HTTPException(status_code=400, detail="userId is required")
+        
     post = session.get(Post, post_id)
     if not post:
         raise HTTPException(status_code=404, detail="Post not found")
-    post.likes += 1
+        
+    # Check if already liked
+    existing_like = session.exec(select(UserPostLike).where(UserPostLike.userId == userId, UserPostLike.postId == post_id)).first()
+    
+    if existing_like:
+        # Unlike
+        session.delete(existing_like)
+        post.likes = max(0, post.likes - 1)
+        is_liked = False
+    else:
+        # Like
+        new_like = UserPostLike(userId=userId, postId=post_id)
+        session.add(new_like)
+        post.likes += 1
+        is_liked = True
+        
     session.add(post)
     session.commit()
     session.refresh(post)
-    return post
+    
+    post_read = PostRead.from_orm(post)
+    post_read.isLiked = is_liked
+    return post_read
 
 @app.post("/events", response_model=Event)
 def create_event(event: EventCreate, session: Session = Depends(get_session)):
@@ -136,14 +179,14 @@ def create_event(event: EventCreate, session: Session = Depends(get_session)):
     session.refresh(new_event)
     return new_event
 
-@app.get("/events/{event_id}", response_model=Event)
+@app.get("/events/{event_id}", response_model=EventRead)
 def read_event(event_id: str, session: Session = Depends(get_session)):
     event = session.exec(select(Event).where(Event.id == event_id).options(selectinload(Event.ageGroups))).first()
     if not event:
         raise HTTPException(status_code=404, detail="Event not found")
     return event
 
-@app.post("/events/{event_id}/join", response_model=Event)
+@app.post("/events/{event_id}/join", response_model=EventRead)
 def join_event(event_id: str, session: Session = Depends(get_session)):
     event = session.get(Event, event_id)
     if not event:
